@@ -36,9 +36,12 @@ export const AdminLayout: React.FC = () => {
     { name: 'Website Settings', path: '/admin/settings', icon: Settings },
   ];
 
-  const handleLogout = () => {
-    logout();
-    navigate('/admin/login');
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } finally {
+      navigate('/admin/login');
+    }
   };
 
   return (

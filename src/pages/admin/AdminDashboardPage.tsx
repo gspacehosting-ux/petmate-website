@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useAdmin } from '../../context/AdminContext';
 import {
@@ -13,17 +13,49 @@ import {
   CheckCircle2,
   Clock,
   Sparkles,
+  ShoppingBag,
+  RotateCw,
+  Search,
 } from 'lucide-react';
 import { PawIcon } from '../../components/common/PawIcon';
 
 export const AdminDashboardPage: React.FC = () => {
-  const { blogs, submissions, galleryImages, updateSubmissionStatus } = useAdmin();
+  const {
+    blogs,
+    submissions,
+    galleryImages,
+    updateSubmissionStatus,
+    orders,
+    isLoadingOrders,
+    refreshOrders,
+    updateOrderStatus,
+  } = useAdmin();
+
+  const [orderFilter, setOrderFilter] = useState<string>('All');
+  const [orderSearch, setOrderSearch] = useState<string>('');
+  const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
 
   const totalBlogs = blogs.length;
   const publishedBlogs = blogs.filter((b) => b.status === 'Published').length;
   const totalImages = galleryImages.length;
   const totalSubmissions = submissions.length;
   const newSubmissions = submissions.filter((s) => s.status === 'New').length;
+  const totalOrders = orders.length;
+  const pendingOrders = orders.filter((o) => o.status === 'pending').length;
+
+  const filteredOrders = useMemo(() => {
+    return orders.filter((o) => {
+      const matchStatus = orderFilter === 'All' || o.status === orderFilter;
+      const q = orderSearch.toLowerCase().trim();
+      const matchSearch =
+        !q ||
+        o.id.toLowerCase().includes(q) ||
+        o.customerName.toLowerCase().includes(q) ||
+        o.customerEmail.toLowerCase().includes(q) ||
+        o.customerPhone.includes(q);
+      return matchStatus && matchSearch;
+    });
+  }, [orders, orderFilter, orderSearch]);
 
   const recentSubmissions = submissions.slice(0, 4);
   const recentBlogs = blogs.slice(0, 4);
@@ -64,8 +96,20 @@ export const AdminDashboardPage: React.FC = () => {
         </div>
       </div>
 
-      {/* 5 Overview Metric Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+      {/* 6 Overview Metric Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+        {/* Total Orders */}
+        <div className="bg-white rounded-3xl p-5 border border-[#F0EAE1] shadow-xs space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Orders</span>
+            <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center">
+              <ShoppingBag className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl sm:text-3xl font-black text-purple-700">{totalOrders}</div>
+          <div className="text-[11px] text-[#666666]">{pendingOrders} pending triage</div>
+        </div>
+
         {/* Total Blog Posts */}
         <div className="bg-white rounded-3xl p-5 border border-[#F0EAE1] shadow-xs space-y-2">
           <div className="flex items-center justify-between">
@@ -99,7 +143,7 @@ export const AdminDashboardPage: React.FC = () => {
             </div>
           </div>
           <div className="text-2xl sm:text-3xl font-black text-[#F4770B]">{totalImages}</div>
-          <div className="text-[11px] text-[#666666]">IndexedDB photos</div>
+          <div className="text-[11px] text-[#666666]">Railway &amp; Media</div>
         </div>
 
         {/* Total Form Submissions */}
@@ -115,7 +159,7 @@ export const AdminDashboardPage: React.FC = () => {
         </div>
 
         {/* New Enquiries */}
-        <div className="bg-white rounded-3xl p-5 border border-[#F0EAE1] shadow-xs space-y-2 col-span-2 sm:col-span-1">
+        <div className="bg-white rounded-3xl p-5 border border-[#F0EAE1] shadow-xs space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">New Enquiries</span>
             <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
@@ -124,6 +168,175 @@ export const AdminDashboardPage: React.FC = () => {
           </div>
           <div className="text-2xl sm:text-3xl font-black text-amber-600">{newSubmissions}</div>
           <div className="text-[11px] text-[#666666]">Needs response</div>
+        </div>
+      </div>
+
+      {/* Customer Orders & Fulfillment Section */}
+      <div className="bg-white rounded-3xl p-6 border border-[#F0EAE1] shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-3 border-b border-gray-100">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center">
+              <ShoppingBag className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-[#14532D]">Customer Orders &amp; Fulfillment</h3>
+              <p className="text-xs text-gray-500">Live order queue from Railway MySQL</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => refreshOrders?.()}
+              disabled={isLoadingOrders}
+              className="bg-[#EDF4E5] hover:bg-[#dbe7cf] text-[#14532D] text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+              title="Refresh Orders"
+            >
+              <RotateCw className={`w-3.5 h-3.5 ${isLoadingOrders ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </button>
+            <span className="bg-purple-100 text-purple-800 text-xs font-bold px-3 py-1.5 rounded-xl">
+              {orders.length} Total Orders
+            </span>
+          </div>
+        </div>
+
+        {/* Filter and Search Bar for Orders */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0 scrollbar-none">
+            {['All', 'pending', 'confirmed', 'shipped', 'delivered', 'cancelled'].map((status) => (
+              <button
+                key={status}
+                onClick={() => setOrderFilter(status)}
+                className={`px-3 py-1 rounded-full text-xs font-semibold capitalize cursor-pointer transition-colors ${
+                  orderFilter === status
+                    ? 'bg-[#14532D] text-white shadow-xs'
+                    : 'bg-[#FFF9F0] text-gray-600 hover:bg-[#EDF4E5]'
+                }`}
+              >
+                {status} {status !== 'All' ? `(${orders.filter((o) => o.status === status).length})` : ''}
+              </button>
+            ))}
+          </div>
+
+          <div className="relative w-full sm:w-64">
+            <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={orderSearch}
+              onChange={(e) => setOrderSearch(e.target.value)}
+              placeholder="Search by ID, customer, phone..."
+              className="w-full bg-[#FFF9F0] border border-[#F0EAE1] rounded-full pl-8 pr-3 py-1 text-xs text-[#171717] focus:outline-hidden focus:ring-2 focus:ring-[#26752C]"
+            />
+          </div>
+        </div>
+
+        {/* Orders Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="bg-[#FFF9F0] border-b border-[#F0EAE1] text-gray-500 font-bold uppercase tracking-wider">
+                <th className="p-3 pl-4">Order ID</th>
+                <th className="p-3">Customer</th>
+                <th className="p-3">Items</th>
+                <th className="p-3">Total</th>
+                <th className="p-3">Payment</th>
+                <th className="p-3">Status</th>
+                <th className="p-3 pr-4 text-right">Update Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {filteredOrders.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="p-8 text-center text-gray-400">
+                    {orders.length === 0
+                      ? 'No customer orders recorded yet. Incoming orders from the store will appear here in real-time.'
+                      : 'No orders match your filter criteria.'}
+                  </td>
+                </tr>
+              ) : (
+                filteredOrders.map((order) => (
+                  <tr key={order.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="p-3 pl-4 font-mono font-bold text-[#14532D]">
+                      #{order.id.slice(0, 8).toUpperCase()}
+                    </td>
+                    <td className="p-3">
+                      <div className="font-bold text-[#171717]">{order.customerName}</div>
+                      <div className="text-[11px] text-gray-500">{order.customerPhone} • {order.customerEmail}</div>
+                      {order.shippingAddress && (
+                        <div className="text-[10px] text-gray-400 truncate max-w-xs">{order.shippingAddress}</div>
+                      )}
+                    </td>
+                    <td className="p-3">
+                      <div className="text-gray-700">
+                        {order.items && order.items.length > 0 ? (
+                          order.items.map((item, idx) => (
+                            <div key={idx} className="text-[11px]">
+                              {item.quantity}x {item.product?.name || `Product #${item.productId.slice(0, 6)}`} (₹{item.unitPrice})
+                            </div>
+                          ))
+                        ) : (
+                          <span className="text-gray-400">1 item</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="p-3">
+                      <div className="font-bold text-[#14532D]">₹{order.total}</div>
+                      <div className="text-[10px] text-gray-400">Sub: ₹{order.subtotal} + ₹{order.deliveryFee}</div>
+                    </td>
+                    <td className="p-3">
+                      <span className="font-semibold text-gray-700">{order.paymentMethod}</span>
+                      <span
+                        className={`block text-[10px] font-bold ${
+                          order.paymentStatus === 'paid' ? 'text-green-600' : 'text-amber-600'
+                        }`}
+                      >
+                        {order.paymentStatus.toUpperCase()}
+                      </span>
+                    </td>
+                    <td className="p-3">
+                      <span
+                        className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                          order.status === 'delivered'
+                            ? 'bg-green-100 text-green-800'
+                            : order.status === 'shipped'
+                            ? 'bg-blue-100 text-blue-800'
+                            : order.status === 'confirmed'
+                            ? 'bg-indigo-100 text-indigo-800'
+                            : order.status === 'cancelled'
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}
+                      >
+                        {order.status}
+                      </span>
+                    </td>
+                    <td className="p-3 pr-4 text-right">
+                      <select
+                        value={order.status}
+                        disabled={updatingOrderId === order.id}
+                        onChange={async (e) => {
+                          const newStatus = e.target.value;
+                          setUpdatingOrderId(order.id);
+                          try {
+                            await updateOrderStatus(order.id, newStatus);
+                          } finally {
+                            setUpdatingOrderId(null);
+                          }
+                        }}
+                        className="bg-[#FFF9F0] border border-[#F0EAE1] rounded-lg px-2 py-1 text-xs font-bold text-[#171717] focus:ring-2 focus:ring-[#26752C] cursor-pointer disabled:opacity-50"
+                      >
+                        <option value="pending">Pending</option>
+                        <option value="confirmed">Confirmed</option>
+                        <option value="shipped">Shipped</option>
+                        <option value="delivered">Delivered</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 

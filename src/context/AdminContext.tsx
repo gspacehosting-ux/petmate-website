@@ -1,31 +1,61 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { BlogPost, FormSubmission, WebsiteSettings, GalleryImage, SubmissionStatus } from '../types';
+import { BlogPost, FormSubmission, WebsiteSettings, GalleryImage, SubmissionStatus, AdminOrder } from '../types';
 import { initialBlogs } from '../data/initialBlogs';
 import { initialSubmissions } from '../data/initialSubmissions';
 import { defaultSettings } from '../data/defaultSettings';
 import { initialGallery } from '../data/initialGallery';
 import { getAllImagesFromDB, saveMultipleImagesToDB, saveImageToDB, deleteImageFromDB } from '../services/db';
 import { useToast } from './ToastContext';
+import {
+  authApi,
+  blogsApi,
+  settingsApi,
+  submissionsApi,
+  galleryApi,
+  ordersApi,
+  toApiGalleryCategory,
+  ApiError,
+} from '../services/api';
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+}
 
 interface AdminContextType {
   blogs: BlogPost[];
   submissions: FormSubmission[];
   settings: WebsiteSettings;
   galleryImages: GalleryImage[];
+  orders: AdminOrder[];
   isAuthenticated: boolean;
+  isLoadingAuth: boolean;
+  adminUser: AdminUser | null;
   isLoadingGallery: boolean;
-  login: (email: string, pass: string) => boolean;
-  logout: () => void;
-  addBlog: (blog: Omit<BlogPost, 'id'>) => void;
-  updateBlog: (blog: BlogPost) => void;
-  deleteBlog: (id: string) => void;
-  addSubmission: (sub: Omit<FormSubmission, 'id' | 'submissionDate' | 'status'>) => void;
-  updateSubmissionStatus: (id: string, status: SubmissionStatus) => void;
-  deleteSubmission: (id: string) => void;
-  updateSettings: (newSettings: WebsiteSettings) => void;
+  isLoadingBlogs: boolean;
+  refreshBlogs: () => Promise<void>;
+  isLoadingSettings: boolean;
+  refreshSettings: () => Promise<void>;
+  isLoadingSubmissions: boolean;
+  refreshSubmissions: () => Promise<void>;
+  isLoadingOrders: boolean;
+  refreshOrders: () => Promise<void>;
+  login: (email: string, pass: string) => Promise<boolean>;
+  logout: () => Promise<void>;
+  addBlog: (blog: Omit<BlogPost, 'id'>) => Promise<BlogPost>;
+  updateBlog: (blog: BlogPost) => Promise<BlogPost>;
+  deleteBlog: (id: string) => Promise<void>;
+  addSubmission: (sub: Omit<FormSubmission, 'id' | 'submissionDate' | 'status'>) => Promise<FormSubmission>;
+  updateSubmissionStatus: (id: string, status: SubmissionStatus) => Promise<FormSubmission>;
+  deleteSubmission: (id: string) => Promise<void>;
+  updateSettings: (newSettings: WebsiteSettings) => Promise<WebsiteSettings>;
   addGalleryImage: (image: GalleryImage) => Promise<void>;
+  uploadGalleryFile: (file: File, category: GalleryImage['category'], dimensions?: string) => Promise<GalleryImage>;
   deleteGalleryImage: (id: string) => Promise<void>;
   refreshGallery: () => Promise<void>;
+  updateOrderStatus: (id: string, status: string) => Promise<void>;
 }
 
 const AdminContext = createContext<AdminContextType | undefined>(undefined);
@@ -33,9 +63,38 @@ const AdminContext = createContext<AdminContextType | undefined>(undefined);
 export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { showToast } = useToast();
 
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return localStorage.getItem('petmate_admin_auth') === 'true';
-  });
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [isLoadingAuth, setIsLoadingAuth] = useState<boolean>(true);
+  const [adminUser, setAdminUser] = useState<AdminUser | null>(null);
+
+  // Verify existing admin session on initial application load (via HTTP-only cookie)
+  useEffect(() => {
+    let isMounted = true;
+    const verifySession = async () => {
+      try {
+        const admin = await authApi.getMe();
+        if (isMounted && admin) {
+          setAdminUser(admin);
+          setIsAuthenticated(true);
+        }
+      } catch {
+        if (isMounted) {
+          setIsAuthenticated(false);
+          setAdminUser(null);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingAuth(false);
+        }
+      }
+    };
+
+    verifySession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const [blogs, setBlogs] = useState<BlogPost[]>(() => {
     const saved = localStorage.getItem('petmate_blogs');
@@ -49,6 +108,32 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return initialBlogs;
   });
 
+  const [isLoadingBlogs, setIsLoadingBlogs] = useState<boolean>(false);
+
+  // Fetch blogs from Railway backend on mount
+  const refreshBlogs = useCallback(async () => {
+    try {
+      setIsLoadingBlogs(true);
+      const fetchedBlogs = await blogsApi.getAll();
+      if (fetchedBlogs && fetchedBlogs.length > 0) {
+        setBlogs(fetchedBlogs);
+        try {
+          localStorage.setItem('petmate_blogs', JSON.stringify(fetchedBlogs));
+        } catch (storageErr) {
+          console.warn('[AdminContext] Failed to cache blogs in localStorage:', storageErr);
+        }
+      }
+    } catch (err) {
+      console.warn('[AdminContext] Backend blogs fetch failed; using cached fallback:', err);
+    } finally {
+      setIsLoadingBlogs(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshBlogs();
+  }, [refreshBlogs]);
+
   const [submissions, setSubmissions] = useState<FormSubmission[]>(() => {
     const saved = localStorage.getItem('petmate_submissions');
     if (saved) {
@@ -61,6 +146,50 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return initialSubmissions;
   });
 
+  const [isLoadingSubmissions, setIsLoadingSubmissions] = useState<boolean>(false);
+
+  // Fetch form submissions from Railway backend
+  const refreshSubmissions = useCallback(async () => {
+    try {
+      setIsLoadingSubmissions(true);
+      const fetched = await submissionsApi.getAll();
+      setSubmissions(fetched);
+      try {
+        localStorage.setItem('petmate_submissions', JSON.stringify(fetched));
+      } catch (storageErr) {
+        console.warn('[AdminContext] Submissions storage notice:', storageErr);
+      }
+    } catch (err) {
+      console.warn('[AdminContext] Submissions fetch notice; using cached fallback:', err);
+    } finally {
+      setIsLoadingSubmissions(false);
+    }
+  }, []);
+
+  const [orders, setOrders] = useState<AdminOrder[]>([]);
+  const [isLoadingOrders, setIsLoadingOrders] = useState<boolean>(false);
+
+  // Fetch orders from Railway backend
+  const refreshOrders = useCallback(async () => {
+    try {
+      setIsLoadingOrders(true);
+      const fetched = await ordersApi.getAll();
+      setOrders(fetched);
+    } catch (err) {
+      console.warn('[AdminContext] Orders fetch notice:', err);
+    } finally {
+      setIsLoadingOrders(false);
+    }
+  }, []);
+
+  // When admin session is active, refresh submissions & orders
+  useEffect(() => {
+    if (isAuthenticated) {
+      refreshSubmissions();
+      refreshOrders();
+    }
+  }, [isAuthenticated, refreshSubmissions, refreshOrders]);
+
   const [settings, setSettings] = useState<WebsiteSettings>(() => {
     const saved = localStorage.getItem('petmate_settings');
     if (saved) {
@@ -72,6 +201,32 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
     return defaultSettings;
   });
+
+  const [isLoadingSettings, setIsLoadingSettings] = useState<boolean>(false);
+
+  // Fetch website settings from Railway backend on mount
+  const refreshSettings = useCallback(async () => {
+    try {
+      setIsLoadingSettings(true);
+      const fetched = await settingsApi.get();
+      if (fetched) {
+        setSettings(fetched);
+        try {
+          localStorage.setItem('petmate_settings', JSON.stringify(fetched));
+        } catch (storageErr) {
+          console.warn('[AdminContext] Failed to cache settings in localStorage:', storageErr);
+        }
+      }
+    } catch (err) {
+      console.warn('[AdminContext] Backend settings fetch failed; using cached fallback:', err);
+    } finally {
+      setIsLoadingSettings(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshSettings();
+  }, [refreshSettings]);
 
   const [galleryImages, setGalleryImages] = useState<GalleryImage[]>([]);
   const [isLoadingGallery, setIsLoadingGallery] = useState(true);
@@ -91,13 +246,30 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     localStorage.setItem('petmate_settings', JSON.stringify(settings));
   }, [settings]);
 
-  // Load or seed gallery from IndexedDB
+  // Load gallery from Railway backend (with IndexedDB as resilient cache/fallback)
   const refreshGallery = useCallback(async () => {
     try {
       setIsLoadingGallery(true);
+      const apiImages = await galleryApi.getAll();
+      if (apiImages && apiImages.length > 0) {
+        setGalleryImages(apiImages);
+        try {
+          await saveMultipleImagesToDB(apiImages);
+        } catch (dbErr) {
+          console.warn('[AdminContext] IndexedDB sync notice:', dbErr);
+        }
+        return;
+      }
+    } catch (err) {
+      console.warn('[AdminContext] Backend gallery fetch notice; trying IndexedDB fallback:', err);
+    } finally {
+      setIsLoadingGallery(false);
+    }
+
+    // Fallback: load from IndexedDB
+    try {
       const dbImages = await getAllImagesFromDB();
       if (!dbImages || dbImages.length === 0) {
-        // Seed default images to IndexedDB
         await saveMultipleImagesToDB(initialGallery);
         setGalleryImages(initialGallery);
       } else {
@@ -106,8 +278,6 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch (err) {
       console.error('Error loading images from IndexedDB:', err);
       setGalleryImages(initialGallery);
-    } finally {
-      setIsLoadingGallery(false);
     }
   }, []);
 
@@ -115,98 +285,251 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     refreshGallery();
   }, [refreshGallery]);
 
-  const login = (email: string, pass: string): boolean => {
-    // Demo credentials check (info@Petmate.com or admin@petmate.com / admin123)
-    const validEmail = email.trim().toLowerCase();
-    if ((validEmail === 'admin@petmate.com' || validEmail === 'info@petmate.com') && pass === 'admin123') {
-      setIsAuthenticated(true);
-      localStorage.setItem('petmate_admin_auth', 'true');
-      showToast('Welcome Back', 'Logged in successfully to Petmate Admin Dashboard.', 'success');
-      return true;
+  const login = async (email: string, pass: string): Promise<boolean> => {
+    try {
+      const res = await authApi.login(email.trim(), pass);
+      if (res.admin) {
+        setAdminUser(res.admin);
+        setIsAuthenticated(true);
+        showToast(
+          'Welcome Back',
+          `Logged in successfully as ${res.admin.name || res.admin.email}.`,
+          'success'
+        );
+        return true;
+      }
+      return false;
+    } catch (err) {
+      const errorMsg =
+        err instanceof ApiError
+          ? err.message
+          : 'Invalid admin credentials. Please verify your email and password.';
+      showToast('Login Failed', errorMsg, 'error');
+      throw new Error(errorMsg);
     }
-    showToast('Login Failed', 'Invalid email or password. Use demo credentials.', 'error');
-    return false;
   };
 
-  const logout = () => {
-    setIsAuthenticated(false);
-    localStorage.removeItem('petmate_admin_auth');
-    showToast('Logged Out', 'You have been safely signed out.', 'info');
+  const logout = async (): Promise<void> => {
+    try {
+      await authApi.logout();
+    } catch (err) {
+      console.warn('[AdminContext] Backend logout request notice:', err);
+    } finally {
+      setIsAuthenticated(false);
+      setAdminUser(null);
+      showToast('Logged Out', 'You have been safely signed out.', 'info');
+    }
   };
 
-  const addBlog = (blogData: Omit<BlogPost, 'id'>) => {
-    const id = `blog-${Date.now()}`;
-    const newBlog: BlogPost = { ...blogData, id };
-    setBlogs((prev) => [newBlog, ...prev]);
-    showToast('Blog Created', `"${newBlog.title}" has been saved.`, 'success');
+  const addBlog = async (blogData: Omit<BlogPost, 'id'>): Promise<BlogPost> => {
+    try {
+      const created = await blogsApi.create(blogData);
+      setBlogs((prev) => [created, ...prev.filter((b) => b.id !== created.id)]);
+      showToast('Blog Created', `"${created.title}" published successfully.`, 'success');
+      return created;
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : 'Failed to publish blog post.';
+      showToast('Create Failed', msg, 'error');
+      throw err;
+    }
   };
 
-  const updateBlog = (updated: BlogPost) => {
-    setBlogs((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
-    showToast('Blog Updated', `"${updated.title}" changes saved.`, 'success');
+  const updateBlog = async (updated: BlogPost): Promise<BlogPost> => {
+    try {
+      const saved = await blogsApi.update(updated.id, updated);
+      setBlogs((prev) => prev.map((b) => (b.id === saved.id ? saved : b)));
+      showToast('Blog Updated', `"${saved.title}" changes saved.`, 'success');
+      return saved;
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : 'Failed to update blog post.';
+      showToast('Update Failed', msg, 'error');
+      throw err;
+    }
   };
 
-  const deleteBlog = (id: string) => {
-    const blog = blogs.find((b) => b.id === id);
-    setBlogs((prev) => prev.filter((b) => b.id !== id));
-    showToast('Blog Deleted', `"${blog?.title || 'Post'}" removed.`, 'info');
+  const deleteBlog = async (id: string): Promise<void> => {
+    try {
+      await blogsApi.delete(id);
+      setBlogs((prev) => prev.filter((b) => b.id !== id));
+      showToast('Blog Deleted', 'Article removed successfully.', 'info');
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : 'Failed to delete blog post.';
+      showToast('Delete Failed', msg, 'error');
+      throw err;
+    }
   };
 
-  const addSubmission = (subData: Omit<FormSubmission, 'id' | 'submissionDate' | 'status'>) => {
-    const now = new Date();
-    const formattedDate = now.toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    }) + `, ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
+  const addSubmission = async (
+    subData: Omit<FormSubmission, 'id' | 'submissionDate' | 'status'>
+  ): Promise<FormSubmission> => {
+    try {
+      const created = await submissionsApi.submit(subData);
+      setSubmissions((prev) => [created, ...prev.filter((s) => s.id !== created.id)]);
+      showToast('Message Received', 'Thank you! Your submission has been saved to Petmate.', 'success');
+      return created;
+    } catch (err) {
+      console.warn('[AdminContext] Backend submit notice, saving fallback:', err);
+      const now = new Date();
+      const formattedDate =
+        now.toLocaleDateString('en-GB', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric',
+        }) +
+        `, ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
 
-    const newSub: FormSubmission = {
-      ...subData,
-      id: `sub-${Date.now().toString().slice(-4)}`,
-      submissionDate: formattedDate,
-      status: 'New'
-    };
+      const fallbackSub: FormSubmission = {
+        ...subData,
+        id: `sub-${Date.now().toString().slice(-4)}`,
+        submissionDate: formattedDate,
+        status: 'New',
+      };
 
-    setSubmissions((prev) => [newSub, ...prev]);
-    showToast('Message Received', 'Thank you! Your submission has been saved to Petmate.', 'success');
+      setSubmissions((prev) => [fallbackSub, ...prev]);
+      showToast('Message Received', 'Thank you! Your submission has been received.', 'success');
+      return fallbackSub;
+    }
   };
 
-  const updateSubmissionStatus = (id: string, status: SubmissionStatus) => {
+  const updateSubmissionStatus = async (
+    id: string,
+    status: SubmissionStatus
+  ): Promise<FormSubmission> => {
+    // Optimistic UI update
     setSubmissions((prev) =>
       prev.map((s) => (s.id === id ? { ...s, status } : s))
     );
-    showToast('Status Updated', `Submission marked as ${status}.`, 'success');
+    try {
+      const updated = await submissionsApi.updateStatus(id, status);
+      setSubmissions((prev) =>
+        prev.map((s) => (s.id === updated.id ? updated : s))
+      );
+      showToast('Status Updated', `Submission marked as ${status}.`, 'success');
+      return updated;
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : 'Failed to update submission status.';
+      console.warn('[AdminContext] Backend status update notice:', err);
+      showToast('Status Notice', `${msg} (Updated locally)`, 'info');
+      const current = submissions.find((s) => s.id === id);
+      return (
+        current || {
+          id,
+          formType: 'Contact Form',
+          customerName: 'Customer',
+          phone: '',
+          email: '',
+          message: '',
+          status,
+          submissionDate: new Date().toLocaleDateString(),
+        }
+      );
+    }
   };
 
-  const deleteSubmission = (id: string) => {
+  const deleteSubmission = async (id: string): Promise<void> => {
+    try {
+      await submissionsApi.delete(id);
+    } catch (err) {
+      console.warn('[AdminContext] Backend submission delete notice:', err);
+    }
     setSubmissions((prev) => prev.filter((s) => s.id !== id));
     showToast('Submission Deleted', 'Record permanently removed.', 'info');
   };
 
-  const updateSettings = (newSettings: WebsiteSettings) => {
-    setSettings(newSettings);
-    showToast('Settings Saved', 'Petmate website settings updated successfully.', 'success');
-  };
-
-  const addGalleryImage = async (image: GalleryImage) => {
+  const updateSettings = async (newSettings: WebsiteSettings): Promise<WebsiteSettings> => {
     try {
-      await saveImageToDB(image);
-      setGalleryImages((prev) => [image, ...prev]);
-      showToast('Image Uploaded', `${image.filename} saved to IndexedDB gallery.`, 'success');
+      const saved = await settingsApi.update(newSettings);
+      setSettings(saved);
+      try {
+        localStorage.setItem('petmate_settings', JSON.stringify(saved));
+      } catch (storageErr) {
+        console.warn('[AdminContext] Failed to cache settings in localStorage:', storageErr);
+      }
+      showToast('Settings Saved', 'Petmate website settings updated on Railway.', 'success');
+      return saved;
     } catch (err) {
-      console.error(err);
-      showToast('Upload Error', 'Could not save image to IndexedDB.', 'error');
+      const msg = err instanceof ApiError ? err.message : 'Failed to update website settings.';
+      showToast('Save Failed', msg, 'error');
+      throw err;
     }
   };
 
-  const deleteGalleryImage = async (id: string) => {
+  const uploadGalleryFile = async (
+    file: File,
+    category: GalleryImage['category'],
+    dimensions?: string
+  ): Promise<GalleryImage> => {
+    const formData = new FormData();
+    formData.append('image', file);
+    const apiCategory = toApiGalleryCategory(category) || 'General';
+    formData.append('category', apiCategory);
+    if (dimensions) {
+      formData.append('dimensions', dimensions);
+    }
+
+    const created = await galleryApi.uploadFile(formData);
+    setGalleryImages((prev) => [created, ...prev.filter((i) => i.id !== created.id)]);
     try {
-      await deleteImageFromDB(id);
-      setGalleryImages((prev) => prev.filter((img) => img.id !== id));
-      showToast('Image Deleted', 'Image removed from gallery.', 'info');
+      await saveImageToDB(created);
+    } catch (dbErr) {
+      console.warn('[AdminContext] IndexedDB sync notice:', dbErr);
+    }
+    showToast('Image Uploaded', `${created.filename} saved to Railway gallery.`, 'success');
+    return created;
+  };
+
+  const addGalleryImage = async (image: GalleryImage): Promise<void> => {
+    try {
+      if (image.dataUrl && !image.dataUrl.startsWith('data:')) {
+        const created = await galleryApi.create({
+          filename: image.filename,
+          category: image.category,
+          fileUrl: image.dataUrl,
+          fileSize: image.fileSize,
+          dimensions: image.dimensions,
+          mimeType: image.mimeType,
+          uploadDate: image.uploadDate,
+        });
+        setGalleryImages((prev) => [created, ...prev.filter((img) => img.id !== created.id)]);
+      } else {
+        setGalleryImages((prev) => [image, ...prev.filter((img) => img.id !== image.id)]);
+      }
+    } catch (err) {
+      console.warn('[AdminContext] Backend gallery create notice:', err);
+      setGalleryImages((prev) => [image, ...prev.filter((img) => img.id !== image.id)]);
+    }
+    try {
+      await saveImageToDB(image);
     } catch (err) {
       console.error(err);
-      showToast('Delete Error', 'Could not remove image.', 'error');
+    }
+    showToast('Image Uploaded', `${image.filename} saved.`, 'success');
+  };
+
+  const deleteGalleryImage = async (id: string): Promise<void> => {
+    try {
+      await galleryApi.delete(id);
+    } catch (err) {
+      console.warn('[AdminContext] Backend gallery delete notice:', err);
+    }
+    try {
+      await deleteImageFromDB(id);
+    } catch (dbErr) {
+      console.warn('[AdminContext] IndexedDB delete notice:', dbErr);
+    }
+    setGalleryImages((prev) => prev.filter((img) => img.id !== id));
+    showToast('Image Deleted', 'Image removed from gallery.', 'info');
+  };
+
+  const updateOrderStatus = async (id: string, status: string): Promise<void> => {
+    try {
+      const updated = await ordersApi.updateStatus(id, status);
+      setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
+      showToast('Order Updated', `Order status changed to ${status}.`, 'success');
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : 'Failed to update order status.';
+      showToast('Update Failed', msg, 'error');
+      throw err;
     }
   };
 
@@ -217,8 +540,19 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         submissions,
         settings,
         galleryImages,
+        orders,
         isAuthenticated,
+        isLoadingAuth,
+        adminUser,
         isLoadingGallery,
+        isLoadingBlogs,
+        refreshBlogs,
+        isLoadingSettings,
+        refreshSettings,
+        isLoadingSubmissions,
+        refreshSubmissions,
+        isLoadingOrders,
+        refreshOrders,
         login,
         logout,
         addBlog,
@@ -229,8 +563,10 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         deleteSubmission,
         updateSettings,
         addGalleryImage,
+        uploadGalleryFile,
         deleteGalleryImage,
         refreshGallery,
+        updateOrderStatus,
       }}
     >
       {children}

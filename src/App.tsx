@@ -48,7 +48,19 @@ const PublicLayout: React.FC = () => {
 
 // Protected Admin Route Guard
 const ProtectedAdminRoute: React.FC = () => {
-  const { isAuthenticated } = useAdmin();
+  const { isAuthenticated, isLoadingAuth } = useAdmin();
+
+  if (isLoadingAuth) {
+    return (
+      <div className="min-h-screen bg-[#FFF9F0] flex flex-col items-center justify-center p-4 text-center">
+        <div className="w-10 h-10 border-4 border-[#14532D] border-t-transparent rounded-full animate-spin mb-4" />
+        <p className="text-xs font-bold text-[#14532D] tracking-wider uppercase">
+          Verifying Admin Session...
+        </p>
+      </div>
+    );
+  }
+
   if (!isAuthenticated) {
     return <Navigate to="/admin/login" replace />;
   }

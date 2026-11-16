@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { Product, CartItem } from '../types';
 import { initialProducts } from '../data/initialProducts';
 import { useToast } from './ToastContext';
+import { productsApi } from '../services/api';
 
 interface ShopContextType {
   products: Product[];
@@ -10,6 +11,8 @@ interface ShopContextType {
   quickViewProduct: Product | null;
   isCartOpen: boolean;
   isSearchOpen: boolean;
+  isLoadingProducts?: boolean;
+  refreshProducts?: () => Promise<void>;
   cartCount: number;
   cartSubtotal: number;
   addToCart: (product: Product, quantity?: number) => void;
@@ -27,7 +30,7 @@ const ShopContext = createContext<ShopContextType | undefined>(undefined);
 
 export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { showToast } = useToast();
-  const [products] = useState<Product[]>(() => {
+  const [products, setProducts] = useState<Product[]>(() => {
     const saved = localStorage.getItem('petmate_products');
     if (saved) {
       try {
@@ -38,6 +41,32 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     return initialProducts;
   });
+
+  const [isLoadingProducts, setIsLoadingProducts] = useState(false);
+
+  // Fetch products from Railway backend on initial mount
+  const refreshProducts = useCallback(async () => {
+    try {
+      setIsLoadingProducts(true);
+      const fetchedProducts = await productsApi.getAll();
+      if (fetchedProducts && fetchedProducts.length > 0) {
+        setProducts(fetchedProducts);
+        try {
+          localStorage.setItem('petmate_products', JSON.stringify(fetchedProducts));
+        } catch (storageErr) {
+          console.warn('[ShopContext] Failed to cache products in localStorage:', storageErr);
+        }
+      }
+    } catch (err) {
+      console.warn('[ShopContext] Backend products fetch failed; using cached/fallback catalog:', err);
+    } finally {
+      setIsLoadingProducts(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshProducts();
+  }, [refreshProducts]);
 
   const [cart, setCart] = useState<CartItem[]>(() => {
     const saved = localStorage.getItem('petmate_cart');
@@ -148,6 +177,8 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
         quickViewProduct,
         isCartOpen,
         isSearchOpen,
+        isLoadingProducts,
+        refreshProducts,
         cartCount,
         cartSubtotal,
         addToCart,

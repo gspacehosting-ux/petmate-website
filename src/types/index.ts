@@ -116,3 +116,36 @@ export interface ToastMessage {
   message: string;
   type: ToastType;
 }
+
+export type OrderStatusType = 'pending' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled';
+export type PaymentStatusType = 'pending' | 'paid' | 'failed';
+
+export interface AdminOrderItem {
+  id: string;
+  orderId: string;
+  productId: string;
+  quantity: number;
+  unitPrice: number;
+  product?: {
+    id: string;
+    name: string;
+    image: string;
+    price: number;
+  };
+}
+
+export interface AdminOrder {
+  id: string;
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  shippingAddress?: string;
+  subtotal: number;
+  deliveryFee: number;
+  total: number;
+  paymentMethod: string;
+  paymentStatus: PaymentStatusType;
+  status: OrderStatusType;
+  createdAt: string;
+  items?: AdminOrderItem[];
+}

@@ -14,11 +14,12 @@ import {
   X,
   MessageSquare,
   AlertCircle,
+  RotateCw,
 } from 'lucide-react';
 import { FormSubmission, SubmissionStatus, FormType } from '../../types';
 
 export const AdminSubmissionsPage: React.FC = () => {
-  const { submissions, updateSubmissionStatus, deleteSubmission } = useAdmin();
+  const { submissions, updateSubmissionStatus, deleteSubmission, isLoadingSubmissions, refreshSubmissions } = useAdmin();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<string>('All');
@@ -45,13 +46,19 @@ export const AdminSubmissionsPage: React.FC = () => {
     });
   }, [submissions, searchQuery, filterType, filterStatus]);
 
-  const handleDelete = (id: string, name: string) => {
+  const handleDelete = async (id: string, name: string) => {
     if (window.confirm(`Permanently remove submission from ${name}?`)) {
-      deleteSubmission(id);
+      await deleteSubmission(id);
       if (viewingSubmission?.id === id) {
         setViewingSubmission(null);
       }
     }
+  };
+
+  const handleModalStatusUpdate = async (newStatus: SubmissionStatus) => {
+    if (!viewingSubmission) return;
+    await updateSubmissionStatus(viewingSubmission.id, newStatus);
+    setViewingSubmission({ ...viewingSubmission, status: newStatus });
   };
 
   return (
@@ -67,9 +74,20 @@ export const AdminSubmissionsPage: React.FC = () => {
           </p>
         </div>
 
-        <div className="bg-[#EDF4E5] text-[#14532D] text-xs font-bold px-4 py-2 rounded-xl flex items-center gap-2">
-          <Inbox className="w-4 h-4 text-[#26752C]" />
-          <span>{submissions.length} Total Records</span>
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => refreshSubmissions?.()}
+            disabled={isLoadingSubmissions}
+            className="bg-[#EDF4E5] hover:bg-[#dbe7cf] text-[#14532D] text-xs font-bold px-3 py-2 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+            title="Refresh Submissions from Railway"
+          >
+            <RotateCw className={`w-3.5 h-3.5 ${isLoadingSubmissions ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </button>
+          <div className="bg-[#EDF4E5] text-[#14532D] text-xs font-bold px-4 py-2 rounded-xl flex items-center gap-2">
+            <Inbox className="w-4 h-4 text-[#26752C]" />
+            <span>{submissions.length} Total Records</span>
+          </div>
         </div>
       </div>
 
@@ -318,29 +336,20 @@ export const AdminSubmissionsPage: React.FC = () => {
                 <div className="flex items-center gap-1.5">
                   <span className="text-gray-500 font-medium">Mark as:</span>
                   <button
-                    onClick={() => {
-                      updateSubmissionStatus(viewingSubmission.id, 'New');
-                      setViewingSubmission({ ...viewingSubmission, status: 'New' });
-                    }}
-                    className="px-2 py-1 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-md font-bold text-[10px]"
+                    onClick={() => handleModalStatusUpdate('New')}
+                    className="px-2 py-1 bg-amber-100 hover:bg-amber-200 text-amber-800 rounded-md font-bold text-[10px] cursor-pointer"
                   >
                     New
                   </button>
                   <button
-                    onClick={() => {
-                      updateSubmissionStatus(viewingSubmission.id, 'Contacted');
-                      setViewingSubmission({ ...viewingSubmission, status: 'Contacted' });
-                    }}
-                    className="px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-md font-bold text-[10px]"
+                    onClick={() => handleModalStatusUpdate('Contacted')}
+                    className="px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-md font-bold text-[10px] cursor-pointer"
                   >
                     Contacted
                   </button>
                   <button
-                    onClick={() => {
-                      updateSubmissionStatus(viewingSubmission.id, 'Resolved');
-                      setViewingSubmission({ ...viewingSubmission, status: 'Resolved' });
-                    }}
-                    className="px-2 py-1 bg-green-100 hover:bg-green-200 text-green-800 rounded-md font-bold text-[10px]"
+                    onClick={() => handleModalStatusUpdate('Resolved')}
+                    className="px-2 py-1 bg-green-100 hover:bg-green-200 text-green-800 rounded-md font-bold text-[10px] cursor-pointer"
                   >
                     Resolved
                   </button>

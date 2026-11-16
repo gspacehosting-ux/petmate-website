@@ -20,16 +20,36 @@ export const AdminSettingsPage: React.FC = () => {
   const { settings, updateSettings } = useAdmin();
 
   const [formSettings, setFormSettings] = useState<WebsiteSettings>(settings);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Sync form when live settings load from Railway
+  React.useEffect(() => {
+    setFormSettings(settings);
+  }, [settings]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    updateSettings(formSettings);
+    setIsSaving(true);
+    try {
+      await updateSettings(formSettings);
+    } catch {
+      // Toast error handled in context
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleResetToDefault = () => {
+  const handleResetToDefault = async () => {
     if (window.confirm('Reset all website branding and contact settings to default?')) {
       setFormSettings(defaultSettings);
-      updateSettings(defaultSettings);
+      setIsSaving(true);
+      try {
+        await updateSettings(defaultSettings);
+      } catch {
+        // Handled in context
+      } finally {
+        setIsSaving(false);
+      }
     }
   };
 
@@ -299,10 +319,11 @@ export const AdminSettingsPage: React.FC = () => {
         <div className="pt-2 flex justify-end">
           <button
             type="submit"
-            className="inline-flex items-center gap-2 bg-[#14532D] hover:bg-[#26752C] text-white font-bold py-3.5 px-8 rounded-full text-sm shadow-md transition-all cursor-pointer"
+            disabled={isSaving}
+            className="inline-flex items-center gap-2 bg-[#14532D] hover:bg-[#26752C] disabled:opacity-75 text-white font-bold py-3.5 px-8 rounded-full text-sm shadow-md transition-all cursor-pointer"
           >
             <Save className="w-4 h-4" />
-            <span>Save &amp; Apply Website Settings</span>
+            <span>{isSaving ? 'Saving to Railway...' : 'Save & Apply Website Settings'}</span>
           </button>
         </div>
       </form>

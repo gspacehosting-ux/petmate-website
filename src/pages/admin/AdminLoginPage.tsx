@@ -12,6 +12,7 @@ export const AdminLoginPage: React.FC = () => {
   const [password, setPassword] = useState('admin123');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // If already authenticated, redirect
   React.useEffect(() => {
@@ -20,15 +21,23 @@ export const AdminLoginPage: React.FC = () => {
     }
   }, [isAuthenticated, navigate]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
+    setIsSubmitting(true);
 
-    const success = login(email, password);
-    if (success) {
-      navigate('/admin/dashboard');
-    } else {
-      setErrorMsg('Invalid login credentials. Please use the demo credentials provided below.');
+    try {
+      const success = await login(email, password);
+      if (success) {
+        navigate('/admin/dashboard');
+      } else {
+        setErrorMsg('Invalid login credentials. Please verify your email and password.');
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Invalid admin login credentials.';
+      setErrorMsg(msg);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -112,9 +121,14 @@ export const AdminLoginPage: React.FC = () => {
             <div className="pt-2">
               <button
                 type="submit"
-                className="w-full bg-[#14532D] hover:bg-[#26752C] text-white font-bold py-3 px-4 rounded-xl text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                disabled={isSubmitting}
+                className="w-full bg-[#14532D] hover:bg-[#26752C] disabled:opacity-75 text-white font-bold py-3 px-4 rounded-xl text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
-                <span>Sign In to Dashboard</span>
+                {isSubmitting ? (
+                  <span>Signing in to Dashboard...</span>
+                ) : (
+                  <span>Sign In to Dashboard</span>
+                )}
               </button>
             </div>
           </form>

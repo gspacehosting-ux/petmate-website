@@ -30,6 +30,7 @@ export const AdminBlogsPage: React.FC = () => {
   // Editor Modal State
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingBlogId, setEditingBlogId] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Form Fields
   const [formTitle, setFormTitle] = useState('');
@@ -88,7 +89,7 @@ export const AdminBlogsPage: React.FC = () => {
   };
 
   // Save Blog
-  const handleSaveBlog = (e: React.FormEvent) => {
+  const handleSaveBlog = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!formTitle.trim() || !formShortDesc.trim() || !formContent.trim()) {
@@ -98,41 +99,51 @@ export const AdminBlogsPage: React.FC = () => {
 
     const slug = formTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 
-    if (editingBlogId) {
-      updateBlog({
-        id: editingBlogId,
-        title: formTitle.trim(),
-        slug,
-        category: formCategory,
-        status: formStatus,
-        author: formAuthor.trim(),
-        publishedDate: formDate,
-        image: formImage.trim() || 'https://images.unsplash.com/photo-1548767797-d8c844163c4c?auto=format&fit=crop&w=800&q=80',
-        shortDescription: formShortDesc.trim(),
-        content: formContent.trim(),
-        readTime: formReadTime,
-      });
-    } else {
-      addBlog({
-        title: formTitle.trim(),
-        slug,
-        category: formCategory,
-        status: formStatus,
-        author: formAuthor.trim(),
-        publishedDate: formDate,
-        image: formImage.trim() || 'https://images.unsplash.com/photo-1548767797-d8c844163c4c?auto=format&fit=crop&w=800&q=80',
-        shortDescription: formShortDesc.trim(),
-        content: formContent.trim(),
-        readTime: formReadTime,
-      });
+    setIsSaving(true);
+    try {
+      if (editingBlogId) {
+        await updateBlog({
+          id: editingBlogId,
+          title: formTitle.trim(),
+          slug,
+          category: formCategory,
+          status: formStatus,
+          author: formAuthor.trim(),
+          publishedDate: formDate,
+          image: formImage.trim() || 'https://images.unsplash.com/photo-1548767797-d8c844163c4c?auto=format&fit=crop&w=800&q=80',
+          shortDescription: formShortDesc.trim(),
+          content: formContent.trim(),
+          readTime: formReadTime,
+        });
+      } else {
+        await addBlog({
+          title: formTitle.trim(),
+          slug,
+          category: formCategory,
+          status: formStatus,
+          author: formAuthor.trim(),
+          publishedDate: formDate,
+          image: formImage.trim() || 'https://images.unsplash.com/photo-1548767797-d8c844163c4c?auto=format&fit=crop&w=800&q=80',
+          shortDescription: formShortDesc.trim(),
+          content: formContent.trim(),
+          readTime: formReadTime,
+        });
+      }
+      setIsEditorOpen(false);
+    } catch {
+      // Error toast is handled inside addBlog/updateBlog
+    } finally {
+      setIsSaving(false);
     }
-
-    setIsEditorOpen(false);
   };
 
-  const handleDelete = (id: string, title: string) => {
+  const handleDelete = async (id: string, title: string) => {
     if (window.confirm(`Delete blog post "${title}"?`)) {
-      deleteBlog(id);
+      try {
+        await deleteBlog(id);
+      } catch {
+        // Error toast is handled inside deleteBlog
+      }
     }
   };
 
@@ -449,9 +460,10 @@ export const AdminBlogsPage: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="bg-[#14532D] hover:bg-[#26752C] text-white font-bold px-6 py-2.5 rounded-xl text-xs shadow-md transition-colors"
+                  disabled={isSaving}
+                  className="bg-[#14532D] hover:bg-[#26752C] disabled:opacity-75 text-white font-bold px-6 py-2.5 rounded-xl text-xs shadow-md transition-colors cursor-pointer"
                 >
-                  {formStatus === 'Published' ? 'Publish Article' : 'Save as Draft'}
+                  {isSaving ? 'Saving...' : formStatus === 'Published' ? 'Publish Article' : 'Save as Draft'}
                 </button>
               </div>
             </form>

@@ -14,11 +14,12 @@ import {
   Calendar,
   HardDrive,
   Maximize2,
+  RotateCw,
 } from 'lucide-react';
 import { GalleryCategory, GalleryImage } from '../../types';
 
 export const AdminGalleryPage: React.FC = () => {
-  const { galleryImages, addGalleryImage, deleteGalleryImage, isLoadingGallery } = useAdmin();
+  const { galleryImages, addGalleryImage, uploadGalleryFile, deleteGalleryImage, isLoadingGallery, refreshGallery } = useAdmin();
   const { showToast } = useToast();
 
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
@@ -57,7 +58,7 @@ export const AdminGalleryPage: React.FC = () => {
     return list;
   }, [galleryImages, selectedCategory, searchQuery]);
 
-  // Handle Multi-file Upload to IndexedDB
+  // Handle Multi-file Upload to Railway Backend
   const handleFilesUpload = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
 
@@ -80,43 +81,57 @@ export const AdminGalleryPage: React.FC = () => {
         continue;
       }
 
-      // Read as Data URL
-      await new Promise<void>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const dataUrl = e.target?.result as string;
-
-          // Compute dimensions
+      try {
+        // Read dimensions first for metadata
+        const dimensions = await new Promise<string>((resolve) => {
           const img = new Image();
-          img.onload = async () => {
-            const dimensions = `${img.naturalWidth} x ${img.naturalHeight}`;
-            const fileSizeKB = (file.size / 1024).toFixed(1) + ' KB';
-            const now = new Date();
-            const uploadDate = now.toLocaleDateString('en-GB', {
-              day: '2-digit',
-              month: 'short',
-              year: 'numeric',
-            });
-
-            const newImage: GalleryImage = {
-              id: `gal-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-              filename: file.name,
-              category: activeUploadCategory,
-              dataUrl,
-              fileSize: fileSizeKB,
-              dimensions,
-              uploadDate,
-              mimeType: file.type,
-            };
-
-            await addGalleryImage(newImage);
-            uploadedCount++;
-            resolve();
+          const objUrl = URL.createObjectURL(file);
+          img.onload = () => {
+            resolve(`${img.naturalWidth} x ${img.naturalHeight}`);
+            URL.revokeObjectURL(objUrl);
           };
-          img.src = dataUrl;
-        };
-        reader.readAsDataURL(file);
-      });
+          img.onerror = () => {
+            resolve('Auto');
+            URL.revokeObjectURL(objUrl);
+          };
+          img.src = objUrl;
+        });
+
+        if (uploadGalleryFile) {
+          await uploadGalleryFile(file, activeUploadCategory, dimensions);
+        } else {
+          // Fallback to base64 addGalleryImage
+          await new Promise<void>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+              const dataUrl = e.target?.result as string;
+              const fileSizeKB = (file.size / 1024).toFixed(1) + ' KB';
+              const now = new Date();
+              const uploadDate = now.toLocaleDateString('en-GB', {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric',
+              });
+              await addGalleryImage({
+                id: `gal-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                filename: file.name,
+                category: activeUploadCategory,
+                dataUrl,
+                fileSize: fileSizeKB,
+                dimensions,
+                uploadDate,
+                mimeType: file.type,
+              });
+              resolve();
+            };
+            reader.readAsDataURL(file);
+          });
+        }
+        uploadedCount++;
+      } catch (err) {
+        console.error('File upload error:', err);
+        showToast('Upload Failed', `Could not upload ${file.name}.`, 'error');
+      }
     }
 
     setIsUploading(false);
@@ -125,9 +140,9 @@ export const AdminGalleryPage: React.FC = () => {
     }
   };
 
-  const handleDelete = (id: string, name: string) => {
-    if (window.confirm(`Are you sure you want to permanently delete "${name}" from IndexedDB?`)) {
-      deleteGalleryImage(id);
+  const handleDelete = async (id: string, name: string) => {
+    if (window.confirm(`Are you sure you want to permanently delete "${name}" from the gallery?`)) {
+      await deleteGalleryImage(id);
       if (viewingImage?.id === id) {
         setViewingImage(null);
       }
@@ -143,12 +158,22 @@ export const AdminGalleryPage: React.FC = () => {
             Image Gallery Management
           </h1>
           <p className="text-xs sm:text-sm text-[#666666] mt-1">
-            Upload, preview, organize, and store high-resolution images permanently in browser IndexedDB.
+            Upload, preview, organize, and store high-resolution images securely on Railway MySQL and storage.
           </p>
         </div>
 
-        {/* Upload Button */}
-        <div className="flex items-center gap-3">
+        {/* Upload & Action Buttons */}
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={() => refreshGallery?.()}
+            disabled={isLoadingGallery}
+            className="bg-[#EDF4E5] hover:bg-[#dbe7cf] text-[#14532D] text-xs font-bold px-3 py-2 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+            title="Refresh Gallery from Railway"
+          >
+            <RotateCw className={`w-3.5 h-3.5 ${isLoadingGallery ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </button>
+
           <select
             value={activeUploadCategory}
             onChange={(e) => setActiveUploadCategory(e.target.value as GalleryCategory)}
@@ -176,7 +201,7 @@ export const AdminGalleryPage: React.FC = () => {
             className="inline-flex items-center gap-2 bg-[#F4770B] hover:bg-[#e06c09] text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow-xs cursor-pointer transition-colors"
           >
             <Upload className="w-4 h-4" />
-            <span>{isUploading ? 'Saving to IndexedDB...' : 'Upload Images'}</span>
+            <span>{isUploading ? 'Uploading to Railway...' : 'Upload Images'}</span>
           </label>
         </div>
       </div>
@@ -199,7 +224,7 @@ export const AdminGalleryPage: React.FC = () => {
             Drag &amp; Drop Pet Photos Here, or Click to Browse
           </h3>
           <p className="text-[11px] text-[#666666]">
-            Supports JPG, PNG, WEBP, GIF, SVG up to 5MB. Stored persistently in client IndexedDB.
+            Supports JPG, PNG, WEBP, GIF, SVG up to 5MB. Stored securely on Railway MySQL and media storage.
           </p>
         </div>
       </div>
