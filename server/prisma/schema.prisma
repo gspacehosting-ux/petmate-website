@@ -1,0 +1,235 @@
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+// ============================================================================
+// ENUMS (Strictly matched to existing frontend types/index.ts)
+// ============================================================================
+
+enum ProductCategory {
+  Food
+  Accessories
+  Toys
+  HealthCare  @map("Health Care")
+  Grooming
+}
+
+enum PetType {
+  Dog
+  Cat
+  Bird
+  SmallPet @map("Small Pet")
+  AllPets  @map("All Pets")
+}
+
+enum BlogCategory {
+  DogCare       @map("Dog Care")
+  CatCare       @map("Cat Care")
+  PetNutrition  @map("Pet Nutrition")
+  PetGrooming   @map("Pet Grooming")
+  PetTraining   @map("Pet Training")
+  PetLifestyle  @map("Pet Lifestyle")
+}
+
+enum BlogStatus {
+  Published
+  Draft
+}
+
+enum FormType {
+  ContactForm         @map("Contact Form")
+  ServiceEnquiryForm  @map("Service Enquiry Form")
+  Newsletter
+}
+
+enum SubmissionStatus {
+  New
+  Contacted
+  Resolved
+}
+
+enum GalleryCategory {
+  Homepage
+  Products
+  Dogs
+  Cats
+  Birds
+  SmallPets @map("Small Pets")
+  Services
+  Blog
+  General
+}
+
+enum OrderStatus {
+  pending
+  confirmed
+  shipped
+  delivered
+  cancelled
+}
+
+enum PaymentStatus {
+  pending
+  paid
+  failed
+}
+
+// ============================================================================
+// MODELS (8 Relational Tables)
+// ============================================================================
+
+model Admin {
+  id           String   @id @default(uuid()) @db.VarChar(36)
+  email        String   @unique @db.VarChar(191)
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  name         String   @db.VarChar(100)
+  role         String   @default("admin") @db.VarChar(50)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("admins")
+}
+
+model Product {
+  id            String          @id @default(uuid()) @db.VarChar(36)
+  name          String          @db.VarChar(200)
+  subtitle      String?         @db.VarChar(255)
+  category      ProductCategory
+  petType       PetType         @map("pet_type")
+  price         Decimal         @db.Decimal(10, 2)
+  originalPrice Decimal         @map("original_price") @db.Decimal(10, 2)
+  discount      Int             @default(0)
+  rating        Decimal         @default(5.00) @db.Decimal(3, 2)
+  reviewCount   Int             @default(0) @map("review_count")
+  image         String          @db.VarChar(500)
+  inStock       Boolean         @default(true) @map("in_stock")
+  stockQuantity Int             @default(50) @map("stock_quantity")
+  isFeatured    Boolean         @default(false) @map("is_featured")
+  description   String          @db.Text
+  weightOrSize  String?         @map("weight_or_size") @db.VarChar(50)
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+
+  orderItems    OrderItem[]
+
+  @@index([category])
+  @@index([petType])
+  @@index([isFeatured])
+  @@map("products")
+}
+
+model Order {
+  id              String        @id @default(uuid()) @db.VarChar(36)
+  customerName    String        @map("customer_name") @db.VarChar(100)
+  customerEmail   String        @map("customer_email") @db.VarChar(191)
+  customerPhone   String        @map("customer_phone") @db.VarChar(25)
+  shippingAddress String?       @map("shipping_address") @db.Text
+  subtotal        Decimal       @db.Decimal(10, 2)
+  deliveryFee     Decimal       @default(0.00) @map("delivery_fee") @db.Decimal(10, 2)
+  total           Decimal       @db.Decimal(10, 2)
+  paymentMethod   String        @default("Cash on Delivery") @map("payment_method") @db.VarChar(50)
+  paymentStatus   PaymentStatus @default(pending) @map("payment_status")
+  status          OrderStatus   @default(pending)
+  createdAt       DateTime      @default(now()) @map("created_at")
+
+  items           OrderItem[]
+
+  @@index([customerEmail])
+  @@index([status])
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String   @id @default(uuid()) @db.VarChar(36)
+  orderId   String   @map("order_id") @db.VarChar(36)
+  productId String   @map("product_id") @db.VarChar(36)
+  quantity  Int      @default(1)
+  unitPrice Decimal  @map("unit_price") @db.Decimal(10, 2)
+
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([orderId])
+  @@index([productId])
+  @@map("order_items")
+}
+
+model BlogPost {
+  id               String       @id @default(uuid()) @db.VarChar(36)
+  title            String       @db.VarChar(255)
+  slug             String       @unique @db.VarChar(255)
+  shortDescription String       @map("short_description") @db.Text
+  content          String       @db.LongText
+  category         BlogCategory
+  status           BlogStatus   @default(Draft)
+  author           String       @default("Petmate Team") @db.VarChar(100)
+  publishedDate    String       @default("Today") @map("published_date") @db.VarChar(50)
+  image            String       @db.VarChar(500)
+  readTime         String       @default("4 min read") @map("read_time") @db.VarChar(50)
+  createdAt        DateTime     @default(now()) @map("created_at")
+  updatedAt        DateTime     @updatedAt @map("updated_at")
+
+  @@index([slug])
+  @@index([status, category])
+  @@map("blog_posts")
+}
+
+model FormSubmission {
+  id              String           @id @default(uuid()) @db.VarChar(36)
+  formType        FormType         @map("form_type")
+  customerName    String?          @default("Newsletter Subscriber") @map("customer_name") @db.VarChar(100)
+  phone           String?          @db.VarChar(25)
+  email           String           @db.VarChar(191)
+  subject         String?          @db.VarChar(200)
+  petType         String?          @map("pet_type") @db.VarChar(100)
+  serviceRequired String?          @map("service_required") @db.VarChar(100)
+  preferredDate   String?          @map("preferred_date") @db.VarChar(50)
+  message         String?          @db.Text
+  status          SubmissionStatus @default(New)
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  @@index([formType])
+  @@index([status])
+  @@map("form_submissions")
+}
+
+model GalleryImage {
+  id         String          @id @default(uuid()) @db.VarChar(36)
+  filename   String          @db.VarChar(255)
+  category   GalleryCategory
+  fileUrl    String          @map("file_url") @db.VarChar(500)
+  fileSize   String          @map("file_size") @db.VarChar(50)
+  dimensions String?         @db.VarChar(50)
+  mimeType   String          @default("image/jpeg") @map("mime_type") @db.VarChar(50)
+  uploadDate String          @map("upload_date") @db.VarChar(50)
+  createdAt  DateTime        @default(now()) @map("created_at")
+
+  @@index([category])
+  @@map("gallery_images")
+}
+
+model WebsiteSettings {
+  id           Int      @id @default(1)
+  websiteName  String   @default("Petmate") @map("website_name") @db.VarChar(100)
+  tagline      String   @default("Your Pet's Best Friend") @db.VarChar(200)
+  phone        String   @default("6363426084") @db.VarChar(30)
+  email        String   @default("info@Petmate.com") @db.VarChar(100)
+  location     String   @default("Bangalore") @db.VarChar(100)
+  weekdayHours String   @default("Mon - Sat: 9:00 AM - 8:30 PM") @map("weekday_hours") @db.VarChar(100)
+  weekendHours String   @default("Sun: 10:00 AM - 6:00 PM") @map("weekend_hours") @db.VarChar(100)
+  instagramUrl String   @default("https://instagram.com") @map("instagram_url") @db.VarChar(255)
+  facebookUrl  String   @default("https://facebook.com") @map("facebook_url") @db.VarChar(255)
+  youtubeUrl   String   @default("https://youtube.com") @map("youtube_url") @db.VarChar(255)
+  whatsappUrl  String   @default("https://wa.me/916363426084") @map("whatsapp_url") @db.VarChar(255)
+  footerAbout  String   @db.Text @map("footer_about")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("website_settings")
+}
