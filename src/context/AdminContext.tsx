@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { BlogPost, FormSubmission, WebsiteSettings, GalleryImage, SubmissionStatus, AdminOrder } from '../types';
 import { initialBlogs } from '../data/initialBlogs';
-import { initialSubmissions } from '../data/initialSubmissions';
 import { defaultSettings } from '../data/defaultSettings';
 import { initialGallery } from '../data/initialGallery';
 import { getAllImagesFromDB, saveMultipleImagesToDB, saveImageToDB, deleteImageFromDB } from '../services/db';
@@ -134,18 +133,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     refreshBlogs();
   }, [refreshBlogs]);
 
-  const [submissions, setSubmissions] = useState<FormSubmission[]>(() => {
-    const saved = localStorage.getItem('petmate_submissions');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {
-        return initialSubmissions;
-      }
-    }
-    return initialSubmissions;
-  });
-
+  const [submissions, setSubmissions] = useState<FormSubmission[]>([]);
   const [isLoadingSubmissions, setIsLoadingSubmissions] = useState<boolean>(false);
 
   // Fetch form submissions from Railway backend
@@ -153,14 +141,9 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       setIsLoadingSubmissions(true);
       const fetched = await submissionsApi.getAll();
-      setSubmissions(fetched);
-      try {
-        localStorage.setItem('petmate_submissions', JSON.stringify(fetched));
-      } catch (storageErr) {
-        console.warn('[AdminContext] Submissions storage notice:', storageErr);
-      }
+      setSubmissions(fetched || []);
     } catch (err) {
-      console.warn('[AdminContext] Submissions fetch notice; using cached fallback:', err);
+      console.warn('[AdminContext] Submissions fetch notice:', err);
     } finally {
       setIsLoadingSubmissions(false);
     }
@@ -235,11 +218,6 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     localStorage.setItem('petmate_blogs', JSON.stringify(blogs));
   }, [blogs]);
-
-  // Sync submissions to localStorage
-  useEffect(() => {
-    localStorage.setItem('petmate_submissions', JSON.stringify(submissions));
-  }, [submissions]);
 
   // Sync settings to localStorage
   useEffect(() => {
@@ -317,6 +295,13 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } finally {
       setIsAuthenticated(false);
       setAdminUser(null);
+      setSubmissions([]);
+      setOrders([]);
+      try {
+        localStorage.removeItem('petmate_submissions');
+      } catch (storageErr) {
+        console.warn('[AdminContext] Failed to remove cached submissions:', storageErr);
+      }
       showToast('Logged Out', 'You have been safely signed out.', 'info');
     }
   };
@@ -368,26 +353,10 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       showToast('Message Received', 'Thank you! Your submission has been saved to Petmate.', 'success');
       return created;
     } catch (err) {
-      console.warn('[AdminContext] Backend submit notice, saving fallback:', err);
-      const now = new Date();
-      const formattedDate =
-        now.toLocaleDateString('en-GB', {
-          day: '2-digit',
-          month: 'short',
-          year: 'numeric',
-        }) +
-        `, ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`;
-
-      const fallbackSub: FormSubmission = {
-        ...subData,
-        id: `sub-${Date.now().toString().slice(-4)}`,
-        submissionDate: formattedDate,
-        status: 'New',
-      };
-
-      setSubmissions((prev) => [fallbackSub, ...prev]);
-      showToast('Message Received', 'Thank you! Your submission has been received.', 'success');
-      return fallbackSub;
+      const msg = err instanceof ApiError ? err.message : 'Failed to send message. Please check your connection and try again.';
+      console.error('[AdminContext] Backend submission error:', err);
+      showToast('Submission Failed', msg, 'error');
+      throw err;
     }
   };
 
@@ -395,10 +364,6 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     id: string,
     status: SubmissionStatus
   ): Promise<FormSubmission> => {
-    // Optimistic UI update
-    setSubmissions((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, status } : s))
-    );
     try {
       const updated = await submissionsApi.updateStatus(id, status);
       setSubmissions((prev) =>
@@ -408,32 +373,23 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       return updated;
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : 'Failed to update submission status.';
-      console.warn('[AdminContext] Backend status update notice:', err);
-      showToast('Status Notice', `${msg} (Updated locally)`, 'info');
-      const current = submissions.find((s) => s.id === id);
-      return (
-        current || {
-          id,
-          formType: 'Contact Form',
-          customerName: 'Customer',
-          phone: '',
-          email: '',
-          message: '',
-          status,
-          submissionDate: new Date().toLocaleDateString(),
-        }
-      );
+      console.error('[AdminContext] Backend status update notice:', err);
+      showToast('Update Failed', msg, 'error');
+      throw err;
     }
   };
 
   const deleteSubmission = async (id: string): Promise<void> => {
     try {
       await submissionsApi.delete(id);
+      setSubmissions((prev) => prev.filter((s) => s.id !== id));
+      showToast('Submission Deleted', 'Record permanently removed.', 'info');
     } catch (err) {
-      console.warn('[AdminContext] Backend submission delete notice:', err);
+      const msg = err instanceof ApiError ? err.message : 'Failed to delete submission.';
+      console.error('[AdminContext] Backend submission delete notice:', err);
+      showToast('Delete Failed', msg, 'error');
+      throw err;
     }
-    setSubmissions((prev) => prev.filter((s) => s.id !== id));
-    showToast('Submission Deleted', 'Record permanently removed.', 'info');
   };
 
   const updateSettings = async (newSettings: WebsiteSettings): Promise<WebsiteSettings> => {

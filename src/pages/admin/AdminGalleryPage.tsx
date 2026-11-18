@@ -278,7 +278,7 @@ export const AdminGalleryPage: React.FC = () => {
       {/* Images Grid */}
       {isLoadingGallery ? (
         <div className="text-center py-16 text-xs text-gray-500">
-          Loading gallery assets from IndexedDB...
+          Loading gallery assets...
         </div>
       ) : filteredImages.length === 0 ? (
         <div className="bg-white rounded-3xl p-12 text-center border border-[#F0EAE1] space-y-3">
@@ -399,7 +399,7 @@ export const AdminGalleryPage: React.FC = () => {
                   className="inline-flex items-center gap-1.5 text-xs font-bold text-red-600 hover:text-red-700 hover:bg-red-50 px-4 py-2 rounded-xl transition-colors"
                 >
                   <Trash2 className="w-4 h-4" />
-                  <span>Delete from IndexedDB</span>
+                  <span>Delete Image</span>
                 </button>
                 <button
                   onClick={() => setViewingImage(null)}

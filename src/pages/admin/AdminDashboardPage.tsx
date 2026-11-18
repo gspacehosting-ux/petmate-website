@@ -464,7 +464,7 @@ export const AdminDashboardPage: React.FC = () => {
             <ImageIcon className="w-5 h-5" />
           </div>
           <h4 className="text-sm font-bold text-[#171717] group-hover:text-[#26752C] transition-colors">
-            IndexedDB Image Gallery
+            Gallery Media Assets
           </h4>
           <p className="text-xs text-[#666666] mt-1">
             Upload and categorize high-res photos.

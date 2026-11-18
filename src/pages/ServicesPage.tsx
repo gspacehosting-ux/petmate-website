@@ -31,6 +31,7 @@ export const ServicesPage: React.FC = () => {
   const [preferredDate, setPreferredDate] = useState('');
   const [message, setMessage] = useState('');
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Expanded details for modal or in-place accordion
   const [expandedService, setExpandedService] = useState<string | null>(null);
@@ -86,7 +87,7 @@ export const ServicesPage: React.FC = () => {
     }
   };
 
-  const handleSubmitEnquiry = (e: React.FormEvent) => {
+  const handleSubmitEnquiry = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!customerName.trim() || !phone.trim() || !email.trim()) {
@@ -94,23 +95,31 @@ export const ServicesPage: React.FC = () => {
       return;
     }
 
-    addSubmission({
-      formType: 'Service Enquiry Form',
-      customerName: customerName.trim(),
-      phone: phone.trim(),
-      email: email.trim(),
-      petType,
-      serviceRequired,
-      preferredDate: preferredDate || 'Flexible',
-      message: message.trim() || `Requested booking for ${serviceRequired}.`,
-    });
+    setIsSubmitting(true);
+    try {
+      await addSubmission({
+        formType: 'Service Enquiry Form',
+        customerName: customerName.trim(),
+        phone: phone.trim(),
+        email: email.trim(),
+        petType,
+        serviceRequired,
+        preferredDate: preferredDate || 'Flexible',
+        message: message.trim() || `Requested booking for ${serviceRequired}.`,
+      });
 
-    setIsSubmitted(true);
-    setCustomerName('');
-    setPhone('');
-    setEmail('');
-    setMessage('');
-    setPreferredDate('');
+      setIsSubmitted(true);
+      setCustomerName('');
+      setPhone('');
+      setEmail('');
+      setMessage('');
+      setPreferredDate('');
+    } catch {
+      // Failed - error toast already displayed by addSubmission
+      // Keep form values intact so customer can retry
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -478,10 +487,20 @@ export const ServicesPage: React.FC = () => {
                 {/* Submit button */}
                 <button
                   type="submit"
-                  className="w-full bg-[#F4770B] hover:bg-[#e06c09] text-white font-bold py-3.5 px-6 rounded-full text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                  disabled={isSubmitting}
+                  className="w-full bg-[#F4770B] hover:bg-[#e06c09] disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold py-3.5 px-6 rounded-full text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  <Send className="w-4 h-4" />
-                  <span>Submit Service Enquiry</span>
+                  {isSubmitting ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Submitting Enquiry...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      <span>Submit Service Enquiry</span>
+                    </>
+                  )}
                 </button>
               </form>
             )}

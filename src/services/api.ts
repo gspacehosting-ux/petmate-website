@@ -274,6 +274,12 @@ const normalizeGallery = (g: RawGalleryData): GalleryImage => {
   };
 };
 
+export const toApiFormType = (ft?: string): string => {
+  if (ft === 'Contact Form') return 'ContactForm';
+  if (ft === 'Service Enquiry Form') return 'ServiceEnquiryForm';
+  return ft || 'ContactForm';
+};
+
 const fromApiFormType = (ft: string): FormType => {
   if (ft === 'ContactForm' || ft === 'Contact Form') return 'Contact Form';
   if (ft === 'ServiceEnquiryForm' || ft === 'Service Enquiry Form') return 'Service Enquiry Form';
@@ -515,18 +521,25 @@ export const submissionsApi = {
   submit: async (
     data: Omit<FormSubmission, 'id' | 'submissionDate' | 'status'>
   ): Promise<FormSubmission> => {
+    const payload = {
+      ...data,
+      formType: toApiFormType(data.formType),
+    };
     const res = await apiClient<ApiResponse<RawSubmissionData>>('/submissions', {
       method: 'POST',
-      body: data,
+      body: payload,
     });
     if (!res.data) throw new ApiError('Failed to record submission', 500);
     return normalizeSubmission(res.data);
   },
 
   getAll: async (params?: { formType?: string; status?: string }): Promise<FormSubmission[]> => {
+    const apiParams = params?.formType
+      ? { ...params, formType: toApiFormType(params.formType) }
+      : params;
     const res = await apiClient<ApiResponse<RawSubmissionData[]>>('/submissions', {
       method: 'GET',
-      params,
+      params: apiParams,
     });
     const items = res.data || [];
     return items.map(normalizeSubmission);
@@ -669,11 +682,13 @@ export const ordersApi = {
     shippingAddress?: string;
     paymentMethod?: string;
     items: { productId: string; quantity: number }[];
-  }): Promise<{ status: string; order: unknown }> => {
-    return apiClient<{ status: string; order: unknown }>('/orders', {
+  }): Promise<AdminOrder> => {
+    const res = await apiClient<ApiResponse<RawOrderData>>('/orders', {
       method: 'POST',
       body: orderData,
     });
+    if (!res.data) throw new ApiError('Failed to create order', 500);
+    return normalizeOrder(res.data);
   },
 
   getAll: async (params?: { status?: string }): Promise<AdminOrder[]> => {

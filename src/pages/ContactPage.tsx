@@ -27,8 +27,9 @@ export const ContactPage: React.FC = () => {
   const [petType, setPetType] = useState('Dog');
   const [message, setMessage] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!fullName.trim() || !phoneNumber.trim() || !emailAddress.trim() || !message.trim()) {
@@ -36,22 +37,30 @@ export const ContactPage: React.FC = () => {
       return;
     }
 
-    addSubmission({
-      formType: 'Contact Form',
-      customerName: fullName.trim(),
-      phone: phoneNumber.trim(),
-      email: emailAddress.trim(),
-      subject: subject.trim() || 'General Pet Inquiry',
-      petType,
-      message: message.trim(),
-    });
+    setIsSubmitting(true);
+    try {
+      await addSubmission({
+        formType: 'Contact Form',
+        customerName: fullName.trim(),
+        phone: phoneNumber.trim(),
+        email: emailAddress.trim(),
+        subject: subject.trim() || 'General Pet Inquiry',
+        petType,
+        message: message.trim(),
+      });
 
-    setSubmitted(true);
-    setFullName('');
-    setPhoneNumber('');
-    setEmailAddress('');
-    setSubject('');
-    setMessage('');
+      setSubmitted(true);
+      setFullName('');
+      setPhoneNumber('');
+      setEmailAddress('');
+      setSubject('');
+      setMessage('');
+    } catch {
+      // Failed - error toast already displayed by addSubmission
+      // Form fields are preserved so customer can retry
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -256,10 +265,20 @@ export const ContactPage: React.FC = () => {
 
                   <button
                     type="submit"
-                    className="w-full bg-[#14532D] hover:bg-[#26752C] text-white font-bold py-3.5 px-6 rounded-full text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    disabled={isSubmitting}
+                    className="w-full bg-[#14532D] hover:bg-[#26752C] disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold py-3.5 px-6 rounded-full text-sm shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
                   >
-                    <Send className="w-4 h-4" />
-                    <span>Send Message to Petmate</span>
+                    {isSubmitting ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span>Sending Message...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-4 h-4" />
+                        <span>Send Message to Petmate</span>
+                      </>
+                    )}
                   </button>
                 </form>
               )}
